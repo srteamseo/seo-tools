@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         GSC Top Queries Tools
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/srteamseo/seo-tools/
 // @version      1.0
 // @description  Select queries in GSC and copy or open in Ahrefs
 // @match        https://search.google.com/*search-console/*
