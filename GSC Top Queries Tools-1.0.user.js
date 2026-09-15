@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         GSC Top Queries Tools
 // @namespace    https://github.com/srteamseo/seo-tools/
-// @version      1.0
+// @version      1.1
 // @description  Select queries in GSC and copy or open in Ahrefs
 // @match        https://search.google.com/*search-console/*
 // @grant        GM_setClipboard
+// @grant        GM_openInTab
 // ==/UserScript==
 
 (function() {
@@ -50,6 +51,59 @@
         return selected;
     }
 
+    function getActiveDimension() {
+        const activeTab = document.querySelector('div[role="tab"][aria-selected="true"]');
+        if (activeTab) {
+            const label = activeTab.textContent.trim().toLowerCase();
+            if (label.includes('page')) return 'page';
+            if (label.includes('quer')) return 'query';
+            if (label.includes('countr')) return 'country';
+            if (label.includes('device')) return 'device';
+        }
+        // Fallback to URL param if the tab can't be found
+        return new URL(location.href).searchParams.get('breakdown') || 'query';
+    }
+
+    function buildRowUrl(value) {
+        const currentUrl = new URL(location.href);
+        const params = currentUrl.searchParams;
+
+        const currentBreakdown = getActiveDimension();
+        const encodedValue = encodeURIComponent(`!${value}`);
+
+        // Preserve the /u/#/ prefix from the original path
+        const pathMatch = currentUrl.pathname.match(/^(\/u\/\d+)?(\/search-console\/.*)$/);
+        const prefix = pathMatch && pathMatch[1] ? pathMatch[1] : '';
+        const basePath = pathMatch ? pathMatch[2] : currentUrl.pathname;
+
+        const newParams = new URLSearchParams(params);
+
+        let targetKey;
+        if (currentBreakdown === 'page') {
+            // Table is showing pages: clicking a row's page value
+            targetKey = 'page';
+            newParams.set('page', encodedValue);
+            newParams.set('breakdown', 'query');
+        } else {
+            // Table is showing queries (breakdown is query or unset): clicking a row's query text
+            targetKey = 'query';
+            newParams.set('query', encodedValue);
+            newParams.set('breakdown', 'page');
+        }
+
+        // URLSearchParams will double-encode our already-encoded value; rebuild manually
+        const parts = [];
+        newParams.forEach((val, key) => {
+            if (key === targetKey) {
+                parts.push(`${key}=${encodedValue}`);
+            } else {
+                parts.push(`${key}=${encodeURIComponent(val)}`);
+            }
+        });
+
+        return `${currentUrl.origin}${prefix}${basePath}?${parts.join('&')}`;
+    }
+
     function addButtons() {
         if (document.getElementById('gsc-tools-container')) return;
 
@@ -76,7 +130,7 @@
             GM_setClipboard(selected.join('\n'));
         };
 
-                // Copy button
+        // Copy with commas button
         const copyCommaBtn = document.createElement('button');
         copyCommaBtn.textContent = 'Copy with Commas';
         styleButton(copyCommaBtn, '#1a73e8');
@@ -88,6 +142,24 @@
                 return;
             }
             GM_setClipboard(selected.join(', '));
+        };
+
+        // Open GSC rows button
+        const openRowsBtn = document.createElement('button');
+        openRowsBtn.textContent = 'Open Rows (Background)';
+        styleButton(openRowsBtn, '#34a853');
+
+        openRowsBtn.onclick = () => {
+            const selected = getSelectedQueries();
+            if (!selected.length) {
+                alert('No queries selected.');
+                return;
+            }
+
+            selected.forEach(value => {
+                const url = buildRowUrl(value);
+                GM_openInTab(url, { active: false, insert: true, setParent: true });
+            });
         };
 
         // Ahrefs button
@@ -109,7 +181,7 @@
             });
         };
 
-        // Ahrefs button
+        // Ahrefs site button
         const ahrefsSiteBtn = document.createElement('button');
         ahrefsSiteBtn.textContent = 'Ahrefs (Site)';
         styleButton(ahrefsSiteBtn, '#ff8800');
@@ -125,11 +197,12 @@
                 const encoded = encodeURIComponent(keyword);
                 const url = `https://app.ahrefs.com/v2-site-explorer/overview?mode=prefix&target=${encoded}`;
                 setTimeout(() => window.open(url, '_blank'), i * 200); // 200ms delay per tab
-        });
-            };
+            });
+        };
 
         container.appendChild(copyBtn);
         container.appendChild(copyCommaBtn);
+        container.appendChild(openRowsBtn);
         container.appendChild(ahrefsBtn);
         container.appendChild(ahrefsSiteBtn);
         document.body.appendChild(container);
