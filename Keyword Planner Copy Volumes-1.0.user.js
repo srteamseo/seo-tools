@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Keyword Planner Copy Volumes
 // @namespace    https://github.com/srteamseo/seo-tools/
-// @version      1.0
-// @description  Adds "Copy SV" and "Copy KW/SV" buttons next to the existing Copy button when keywords are selected in Google Keyword Planner.
+// @version      1.1
+// @description  Adds "Copy SV" and "Copy KW/SV" buttons next to the existing Copy button when keywords are selected in Google Keyword Planner, and overrides the native Copy button to match on-screen order.
 // @author       you
 // @match        https://ads.google.com/aw/keywordplanner/*
 // @match        https://ads.google.com/*keywordplanner*
@@ -101,11 +101,40 @@
     return document.querySelector('material-button[aria-label="Copy to clipboard"]');
   }
 
+  // --- Overriding the native Copy button ---------------------------------
+  // Google's native copy button doesn't preserve on-screen row order (it
+  // appears to use some other internal ordering). This script's own
+  // getSelectedKeywordData() reads rows via querySelectorAll, which matches
+  // what's visually on screen. So we replace the native button's handler
+  // with our own, keeping its keyword-only output but sourced the same way
+  // as "Copy KW/SV".
+
+  function overrideNativeCopyButton() {
+    const nativeBtn = findExistingCopyButton();
+    if (!nativeBtn || nativeBtn.hasAttribute('data-kp-copy-overridden')) return null;
+
+    const replacement = nativeBtn.cloneNode(true);
+    replacement.setAttribute('data-kp-copy-overridden', 'true');
+
+    replacement.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const data = getSelectedKeywordData();
+      if (data.length === 0) return;
+      const text = data.map((d) => d.keyword).join('\n');
+      copyToClipboard(text);
+    });
+
+    nativeBtn.replaceWith(replacement);
+    return replacement;
+  }
+
   // --- Building our buttons ---------------------------------------------
 
   function makeButton(referenceBtn, label, onClick) {
     const btn = referenceBtn.cloneNode(true);
     btn.removeAttribute('id');
+    btn.removeAttribute('data-kp-copy-overridden');
     btn.setAttribute('aria-label', label);
     btn.setAttribute('data-kp-copy-extra', label);
     btn.title = label;
@@ -141,19 +170,25 @@
     const copyBtn = findExistingCopyButton();
     if (!copyBtn) return;
 
+    // Replace the native Copy button so its output order matches the
+    // on-screen order too (see overrideNativeCopyButton above).
+    overrideNativeCopyButton();
+    const copyBtnFresh = findExistingCopyButton();
+    if (!copyBtnFresh) return;
+
     // Walk up to the outer ".element" wrapper so our buttons sit in the same
     // toolbar row/flex context as the existing Copy button.
-    const copyBtnContainer = copyBtn.closest('.element') || copyBtn.parentElement;
+    const copyBtnContainer = copyBtnFresh.closest('.element') || copyBtnFresh.parentElement;
     if (!copyBtnContainer || !copyBtnContainer.parentElement) return;
 
-    const copyVolumeBtn = makeButton(copyBtn, 'Copy SV', () => {
+    const copyVolumeBtn = makeButton(copyBtnFresh, 'Copy SV', () => {
       const data = getSelectedKeywordData();
       if (data.length === 0) return;
       const text = data.map((d) => d.volume).join('\n');
       copyToClipboard(text);
     });
 
-    const copyKeywordVolumeBtn = makeButton(copyBtn, 'Copy KW/SV', () => {
+    const copyKeywordVolumeBtn = makeButton(copyBtnFresh, 'Copy KW/SV', () => {
       const data = getSelectedKeywordData();
       if (data.length === 0) return;
       const text = data.map((d) => `${d.keyword} (${d.volume})`).join('\n');
